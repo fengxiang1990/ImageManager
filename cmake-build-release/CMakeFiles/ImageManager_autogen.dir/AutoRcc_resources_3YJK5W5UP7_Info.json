@@ -1,0 +1,22 @@
+{
+	"BUILD_DIR" : "E:/Users/pc/Documents/ImageManager/cmake-build-release/ImageManager_autogen",
+	"CMAKE_BINARY_DIR" : "E:/Users/pc/Documents/ImageManager/cmake-build-release",
+	"CMAKE_CURRENT_BINARY_DIR" : "E:/Users/pc/Documents/ImageManager/cmake-build-release",
+	"CMAKE_CURRENT_SOURCE_DIR" : "E:/Users/pc/Documents/ImageManager",
+	"CMAKE_SOURCE_DIR" : "E:/Users/pc/Documents/ImageManager",
+	"CROSS_CONFIG" : false,
+	"GENERATOR" : "Ninja",
+	"INCLUDE_DIR" : "E:/Users/pc/Documents/ImageManager/cmake-build-release/ImageManager_autogen/include",
+	"INPUTS" : [ "E:/Users/pc/Documents/ImageManager/resources/ic_icon.png" ],
+	"LOCK_FILE" : "E:/Users/pc/Documents/ImageManager/cmake-build-release/CMakeFiles/ImageManager_autogen.dir/AutoRcc_resources_3YJK5W5UP7_Lock.lock",
+	"MULTI_CONFIG" : false,
+	"OPTIONS" : [ "--no-zstd", "-name", "resources" ],
+	"OUTPUT_CHECKSUM" : "3YJK5W5UP7",
+	"OUTPUT_NAME" : "qrc_resources.cpp",
+	"RCC_EXECUTABLE" : "E:/Qt/6.8.2/mingw_64/bin/rcc.exe",
+	"RCC_LIST_OPTIONS" : [ "--list" ],
+	"SETTINGS_FILE" : "E:/Users/pc/Documents/ImageManager/cmake-build-release/CMakeFiles/ImageManager_autogen.dir/AutoRcc_resources_3YJK5W5UP7_Used.txt",
+	"SOURCE" : "E:/Users/pc/Documents/ImageManager/resources/resources.qrc",
+	"USE_BETTER_GRAPH" : true,
+	"VERBOSITY" : 0
+}
