@@ -1,0 +1,9 @@
+E:/Users/pc/Documents/ImageManager/cmake-build-release/CMakeFiles/ImageManager.dir
+E:/Users/pc/Documents/ImageManager/cmake-build-release/CMakeFiles/edit_cache.dir
+E:/Users/pc/Documents/ImageManager/cmake-build-release/CMakeFiles/rebuild_cache.dir
+E:/Users/pc/Documents/ImageManager/cmake-build-release/CMakeFiles/list_install_components.dir
+E:/Users/pc/Documents/ImageManager/cmake-build-release/CMakeFiles/install.dir
+E:/Users/pc/Documents/ImageManager/cmake-build-release/CMakeFiles/install/local.dir
+E:/Users/pc/Documents/ImageManager/cmake-build-release/CMakeFiles/install/strip.dir
+E:/Users/pc/Documents/ImageManager/cmake-build-release/CMakeFiles/ImageManager_autogen_timestamp_deps.dir
+E:/Users/pc/Documents/ImageManager/cmake-build-release/CMakeFiles/ImageManager_autogen.dir
