@@ -6,7 +6,7 @@
 #include <opencv2/imgproc.hpp>
 #include <QMessageBox>
 #include <QFileDialog>
-
+#include <QtConcurrent>
 
 
 ImagePreview::ImagePreview(const QString &filePath, QWidget *parent)
@@ -49,17 +49,26 @@ ImagePreview::ImagePreview(const QString &filePath, QWidget *parent)
     connect(ui->brightnessSlider, &QSlider::valueChanged, this, &ImagePreview::onBrightnessChanged);
     connect(ui->contrastSlider, &QSlider::valueChanged, this, &ImagePreview::onContrastChanged);
     connect(ui->saturationSlider, &QSlider::valueChanged, this, &ImagePreview::onSaturationChanged);
+    connect(ui->exposureSlider, &QSlider::valueChanged, this, &ImagePreview::onExposureChanged);
+    connect(ui->claritySlider, &QSlider::valueChanged, this, &ImagePreview::onClarityChanged);
+    connect(ui->temperatureSlider, &QSlider::valueChanged, this, &ImagePreview::onTemperatureChanged);
+    connect(ui->sharpenSlider, &QSlider::valueChanged, this, &ImagePreview::onSharpenChanged);
 
     //点击事件
     connect(ui->saveButton, &QPushButton::clicked, this, &ImagePreview::onSaveButtonClicked);
     connect(ui->saveAsButton, &QPushButton::clicked, this, &ImagePreview::onSaveAsButtonClicked);
     connect(ui->deleteButton, &QPushButton::clicked, this, &ImagePreview::onDeleteButtonClicked);
 
+    imageLabelPtr = ui->imageLabel;
     updatePixmap();
 }
 
 ImagePreview::~ImagePreview()
 {
+    // 等待后台任务完成
+    if (future.isRunning()) {
+        future.waitForFinished();
+    }
     delete ui;
 }
 
@@ -93,6 +102,62 @@ void ImagePreview::resizeEvent(QResizeEvent *event)
 }
 
 
+cv::Mat ImagePreview::processImage()
+{
+    cv::Mat adjustedImage = m_image.clone();
+
+    // 亮度/对比度
+    double alpha = 1.0 + m_contrast / 100.0;
+    double beta = m_brightness;
+    adjustedImage.convertTo(adjustedImage, -1, alpha, beta);
+
+    // 曝光度
+    if (m_exposure != 0) {
+        double exposureFactor = 1.0 + m_exposure / 100.0;
+        adjustedImage *= exposureFactor;
+        cv::threshold(adjustedImage, adjustedImage, 255, 255, cv::THRESH_TRUNC);
+        adjustedImage.convertTo(adjustedImage, CV_8U);
+    }
+
+    // 饱和度
+    if (m_saturation != 0) {
+        cv::Mat hsvImage;
+        cv::cvtColor(adjustedImage, hsvImage, cv::COLOR_BGR2HSV);
+        std::vector<cv::Mat> hsvChannels;
+        cv::split(hsvImage, hsvChannels);
+        double saturationScale = 1.0 + m_saturation / 100.0;
+        hsvChannels[1] = hsvChannels[1] * saturationScale;
+        cv::merge(hsvChannels, hsvImage);
+        cv::cvtColor(hsvImage, adjustedImage, cv::COLOR_HSV2BGR);
+    }
+
+    // 色温
+    if (m_temperature != 0) {
+        std::vector<cv::Mat> channels;
+        cv::split(adjustedImage, channels);
+        int tempShift = m_temperature;
+        channels[2] += tempShift;
+        channels[0] -= tempShift;
+        cv::merge(channels, adjustedImage);
+    }
+
+    // 清晰度
+    if (m_clarity != 0) {
+        cv::Mat blurred;
+        double sigma = 1.0;
+        cv::GaussianBlur(adjustedImage, blurred, cv::Size(0, 0), sigma);
+        cv::addWeighted(adjustedImage, 1.0 + m_clarity / 100.0, blurred, -m_clarity / 100.0, 0, adjustedImage);
+    }
+
+    // 锐化
+    if (m_sharpen != 0) {
+        cv::Mat kernel = (cv::Mat_<float>(3, 3) <<0, -1, 0,-1, 5, -1,0, -1, 0);
+        cv::filter2D(adjustedImage, adjustedImage, adjustedImage.depth(), kernel);
+    }
+    return adjustedImage;
+}
+
+
 void ImagePreview::onSaveButtonClicked()
 {
     std::lock_guard<std::mutex> lock(imageMutex);
@@ -101,43 +166,18 @@ void ImagePreview::onSaveButtonClicked()
         return;
     }
 
-    // 将 m_image 转换为 QPixmap
-    cv::Mat adjustedImage = m_image.clone();
-
-    // 调整亮度和对比度
-    double alpha = 1.0 + m_contrast / 100.0;
-    double beta = m_brightness;
-    adjustedImage.convertTo(adjustedImage, -1, alpha, beta);
-
-    // 调整饱和度
-    if (m_saturation != 0) {
-        cv::Mat hsvImage;
-        cv::cvtColor(adjustedImage, hsvImage, cv::COLOR_BGR2HSV);
-
-        std::vector<cv::Mat> hsvChannels;
-        cv::split(hsvImage, hsvChannels);
-
-        double saturationScale = 1.0 + m_saturation / 100.0;
-        hsvChannels[1] = hsvChannels[1] * saturationScale;
-
-        cv::merge(hsvChannels, hsvImage);
-        cv::cvtColor(hsvImage, adjustedImage, cv::COLOR_HSV2BGR);
-    }
-
-    // 将处理后的 OpenCV 图像转换为 QPixmap
-    cv::cvtColor(adjustedImage, adjustedImage, cv::COLOR_BGR2RGB);
-    QImage qImage(adjustedImage.data, adjustedImage.cols, adjustedImage.rows, adjustedImage.step, QImage::Format_RGB888);
+    cv::Mat processed = processImage();
+    cv::cvtColor(processed, processed, cv::COLOR_BGR2RGB);
+    QImage qImage(processed.data, processed.cols, processed.rows, processed.step, QImage::Format_RGB888);
     QPixmap pixmap = QPixmap::fromImage(qImage);
 
-    // 保存为原路径
     if (pixmap.save(g_filePath)) {
         QMessageBox::information(this, "保存成功", "图片已成功保存！");
-        emit imageSaved(g_filePath);  // 发射图片已保存的信号
+        emit imageSaved(g_filePath);
     } else {
         QMessageBox::warning(this, "保存失败", "无法保存图片！");
     }
 }
-
 void ImagePreview::onSaveAsButtonClicked()
 {
     std::lock_guard<std::mutex> lock(imageMutex);
@@ -151,42 +191,17 @@ void ImagePreview::onSaveAsButtonClicked()
         return;
     }
 
-    // 将 m_image 转换为 QPixmap
-    cv::Mat adjustedImage = m_image.clone();
-
-    // 调整亮度和对比度
-    double alpha = 1.0 + m_contrast / 100.0;
-    double beta = m_brightness;
-    adjustedImage.convertTo(adjustedImage, -1, alpha, beta);
-
-    // 调整饱和度
-    if (m_saturation != 0) {
-        cv::Mat hsvImage;
-        cv::cvtColor(adjustedImage, hsvImage, cv::COLOR_BGR2HSV);
-
-        std::vector<cv::Mat> hsvChannels;
-        cv::split(hsvImage, hsvChannels);
-
-        double saturationScale = 1.0 + m_saturation / 100.0;
-        hsvChannels[1] = hsvChannels[1] * saturationScale;
-
-        cv::merge(hsvChannels, hsvImage);
-        cv::cvtColor(hsvImage, adjustedImage, cv::COLOR_HSV2BGR);
-    }
-
-    // 将处理后的 OpenCV 图像转换为 QPixmap
-    cv::cvtColor(adjustedImage, adjustedImage, cv::COLOR_BGR2RGB);
-    QImage qImage(adjustedImage.data, adjustedImage.cols, adjustedImage.rows, adjustedImage.step, QImage::Format_RGB888);
+    cv::Mat processed = processImage();
+    cv::cvtColor(processed, processed, cv::COLOR_BGR2RGB);
+    QImage qImage(processed.data, processed.cols, processed.rows, processed.step, QImage::Format_RGB888);
     QPixmap pixmap = QPixmap::fromImage(qImage);
 
-    // 保存为新路径
     if (pixmap.save(newFilePath)) {
         QMessageBox::information(this, "另存为成功", "图片已成功另存为！");
     } else {
         QMessageBox::warning(this, "另存为失败", "无法保存图片！");
     }
 }
-
 void ImagePreview::onDeleteButtonClicked()
 {
     int ret = QMessageBox::warning(this, "删除确认", "确定要删除这张图片吗？", QMessageBox::Yes | QMessageBox::No);
@@ -240,20 +255,94 @@ void ImagePreview::restoreGeometryDelayed()
 void ImagePreview::onBrightnessChanged(int value)
 {
     m_brightness = value;
-    updatePixmap();
+    ui->brightnessLabelVal->setText(QString::number(value));
+    if(!future.isFinished()){
+        return;
+    }
+    future = QtConcurrent::run([this]() {
+        updatePixmap();
+    });
+    watcher.setFuture(future);
+}
+
+void ImagePreview::onExposureChanged(int value)
+{
+    m_exposure = value;
+    ui->exposureLabelVal->setText(QString::number(value));
+    if(!future.isFinished()){
+        return;
+    }
+    future = QtConcurrent::run([this]() {
+        updatePixmap();
+    });
+    watcher.setFuture(future);
+}
+
+void ImagePreview::onClarityChanged(int value)
+{
+    m_clarity = value;
+    ui->clarityLabelVal->setText(QString::number(value));
+    if(!future.isFinished()){
+        return;
+    }
+    future = QtConcurrent::run([this]() {
+        updatePixmap();
+    });
+    watcher.setFuture(future);
+}
+
+void ImagePreview::onTemperatureChanged(int value)
+{
+    m_temperature = value;
+    ui->temperatureLabelVal->setText(QString::number(value));
+    if(!future.isFinished()){
+        return;
+    }
+    future = QtConcurrent::run([this]() {
+        updatePixmap();
+    });
+    watcher.setFuture(future);
+}
+
+void ImagePreview::onSharpenChanged(int value)
+{
+    m_sharpen = value;
+    ui->sharpenLabelVal->setText(QString::number(value));
+    if(!future.isFinished()){
+        return;
+    }
+    future = QtConcurrent::run([this]() {
+        updatePixmap();
+    });
+    watcher.setFuture(future);
 }
 
 void ImagePreview::onContrastChanged(int value)
 {
     m_contrast = value;
-    updatePixmap();
+    ui->contrastLabelVal->setText(QString::number(value));
+    if(!future.isFinished()){
+        return;
+    }
+    future = QtConcurrent::run([this]() {
+        updatePixmap();
+    });
+    watcher.setFuture(future);
 }
 
 void ImagePreview::onSaturationChanged(int value)
 {
     m_saturation = value;
-    updatePixmap();
+    ui->saturationLabelVal->setText(QString::number(value));
+    if(!future.isFinished()){
+        return;
+    }
+    future = QtConcurrent::run([this]() {
+        updatePixmap();
+    });
+    watcher.setFuture(future);
 }
+
 
 void ImagePreview::updatePixmap()
 {
@@ -292,12 +381,69 @@ void ImagePreview::updatePixmap()
         cv::cvtColor(hsvImage, adjustedImage, cv::COLOR_HSV2BGR);
     }
 
+    // 曝光度（全图整体亮度乘因子）
+    if (m_exposure != 0) {
+        double exposureFactor = 1.0 + m_exposure / 100.0;
+        adjustedImage *= exposureFactor;
+        cv::threshold(adjustedImage, adjustedImage, 255, 255, cv::THRESH_TRUNC);
+        adjustedImage.convertTo(adjustedImage, CV_8U); // 转回 8bit
+    }
+
+    // 色温（调红蓝通道）
+    if (m_temperature != 0) {
+        std::vector<cv::Mat> channels;
+        cv::split(adjustedImage, channels);
+        int tempShift = m_temperature;
+        channels[2] += tempShift; // R 增强
+        channels[0] -= tempShift; // B 减弱
+        cv::merge(channels, adjustedImage);
+    }
+
+    // 清晰度（高通滤波增强细节）
+    if (m_clarity != 0) {
+        cv::Mat blurred;
+        double sigma = 1.0;
+        cv::GaussianBlur(adjustedImage, blurred, cv::Size(0, 0), sigma);
+        cv::addWeighted(adjustedImage, 1.0 + m_clarity / 100.0, blurred, -m_clarity / 100.0, 0, adjustedImage);
+    }
+
+    // 锐化
+    if (m_sharpen != 0) {
+        cv::Mat kernel = (cv::Mat_<float>(3, 3) <<0, -1, 0,-1, 5, -1, 0, -1, 0);
+        cv::filter2D(adjustedImage, adjustedImage, adjustedImage.depth(), kernel);
+    }
+
     // 将 OpenCV Mat 转换为 QPixmap
     cv::cvtColor(adjustedImage, adjustedImage, cv::COLOR_BGR2RGB);
     QImage qImage(adjustedImage.data, adjustedImage.cols, adjustedImage.rows, adjustedImage.step, QImage::Format_RGB888);
+    if (qImage.isNull()) {
+        qDebug() << "Failed to create QImage from adjustedImage.";
+        return;
+    }
     QPixmap pixmap = QPixmap::fromImage(qImage);
+    if (pixmap.isNull()) {
+        qDebug() << "Failed to create QPixmap from QImage.";
+        return;
+    }
 
     // 适应窗口大小，保持宽高比
     QPixmap scaled = pixmap.scaled(ui->imageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    ui->imageLabel->setPixmap(scaled);
+
+    // 然后回到主线程设置 UI
+    if (!ui->imageLabel) {
+        qDebug() << "imageLabel is null!";
+        return;
+    }
+    // 然后回到主线程设置 UI
+    if (!imageLabelPtr) { // 检查 imageLabel 是否已被销毁
+        qDebug() << "imageLabel is null!";
+        return;
+    }
+    QMetaObject::invokeMethod(this, [this, scaled]() {
+        if (imageLabelPtr) { // 再次检查 imageLabel 是否有效
+            imageLabelPtr->setPixmap(scaled);
+        }
+    }, Qt::QueuedConnection);
 }
+
+

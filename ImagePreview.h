@@ -3,6 +3,10 @@
 
 #include <QDialog>
 #include <opencv2/opencv.hpp> // 添加 OpenCV 头文件
+#include <QLabel>
+#include <QPointer>
+#include <QFuture>
+#include <QFutureWatcher>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class ImagePreview; }
@@ -32,11 +36,19 @@ private slots:
     void onBrightnessChanged(int value);
     void onContrastChanged(int value);
     void onSaturationChanged(int value);
+    void onExposureChanged(int value);       // 曝光度
+    void onClarityChanged(int value);        // 清晰度
+    void onTemperatureChanged(int value);    // 色温
+    void onSharpenChanged(int value);     // 锐化
 
 private:
+    QFuture<void> future; // 保存后台任务的引用
+    QFutureWatcher<void> watcher; // 监控后台任务的状态
+    QPointer<QLabel> imageLabelPtr; // 使用 QPointer 包装 ui->imageLabel
     QString g_filePath;
     void updatePixmap();
     void restoreGeometryDelayed();
+    cv::Mat processImage();
     std::mutex imageMutex; // 确保线程安全
     Ui::ImagePreview *ui;
     QPixmap m_pixmap;
@@ -46,6 +58,11 @@ private:
     int m_brightness = 0; // 亮度
     int m_contrast = 0; // 对比度
     int m_saturation = 0; // 饱和度
+    int m_exposure = 0;     // 曝光度
+    int m_clarity = 0;      // 清晰度
+    int m_temperature = 0;  // 色温
+    int m_sharpen = 0;      // 锐化
 };
+
 
 #endif // IMAGEPREVIEW_H
